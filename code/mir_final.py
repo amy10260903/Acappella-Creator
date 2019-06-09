@@ -63,12 +63,15 @@ def gen_beat(all_data, fs, fps, cand):
         beat[s:s+cand_len] = data[start:end]
     return beat, beat_samples
 
-praatEXE = 'C:/Users/user/Desktop/Praat.exe'
-all_song = 'C:/Users/user/Desktop/mir_final/lemon.wav'
+#praatEXE = 'C:/Users/user/Desktop/Praat.exe'
+praatEXE = '..\\Praat.exe'
+#all_song = 'C:/Users/user/Desktop/mir_final/lemon.wav'
+all_song = '..\\data\\lemon.wav'
 #file = 'C:/Users/user/Desktop/mir_final/lemon_first_sent.wav'
 #file = 'C:/Users/user/Desktop/mir_final/lemon_sec_sent.wav'
 #file = 'C:/Users/user/Desktop/mir_final/lemon_third_sent.wav'
-file = 'C:/Users/user/Desktop/mir_final/lemon_forth_sent.wav'
+#file = 'C:/Users/user/Desktop/mir_final/lemon_forth_sent.wav'
+file = '..\\data\\lemon_forth_sent.wav'
 data, fs = librosa.load(file)
 all_data, fs = librosa.load(all_song)
 
@@ -85,10 +88,20 @@ time_step = librosa.frames_to_time(range(rmse.shape[-1]), sr=fs, hop_length=hop_
 
 ''' ZCR, pitch and energy to find candidates for beat'''
 zcr = librosa.feature.zero_crossing_rate(data, frame_length=win_len, hop_length=hop_len)
+'''
 energy = extractIntensity(file, 'C:/Users/user/Desktop/mir_final/energy.txt', praatEXE,
                           minPitch=65, sampleStep=librosa.samples_to_time(hop_len, fs), 
                           forceRegenerate=True, undefinedValue=0)
 pitch = extractPitch(file, 'C:/Users/user/Desktop/mir_final/pitch.txt', praatEXE,
+             sampleStep=librosa.samples_to_time(hop_len, fs), minPitch=65, maxPitch=1047,
+                             silenceThreshold=0.01, forceRegenerate=True,
+                             undefinedValue=0, medianFilterWindowSize=0,
+                             pitchQuadInterp=None)
+'''
+energy = extractIntensity(file, '..\\result\\energy.txt', praatEXE,
+                          minPitch=65, sampleStep=librosa.samples_to_time(hop_len, fs), 
+                          forceRegenerate=True, undefinedValue=0)
+pitch = extractPitch(file, '..\\result\\pitch.txt', praatEXE,
              sampleStep=librosa.samples_to_time(hop_len, fs), minPitch=65, maxPitch=1047,
                              silenceThreshold=0.01, forceRegenerate=True,
                              undefinedValue=0, medianFilterWindowSize=0,
