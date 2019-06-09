@@ -2,8 +2,11 @@ import pyworld as pw
 import sounddevice as sd
 import librosa
 import numpy as np
+import math
+from operator import sub
+from scipy.io.wavfile import write
 
-x, fs = librosa.load('C:/Users/AHG/Desktop/ASAS/Final_project/data/lemon.wav', dtype='double', sr=None)
+x, fs = librosa.load('C:/Users/AHG/Desktop/ASAS/Final_project/data/f1_005.wav', dtype='double', sr=None)
 
 
 _f0, t = pw.dio(x, fs)    # raw pitch extractor
@@ -21,8 +24,9 @@ for k, freq_f0 in enumerate(f0):
     if freq_f0==0:
         continue
     temp = freq_f0/phonetic
-    closet_multi = [round(i) for i in temp]
-    diff = [abs(j) for j in closet_multi-temp]
+    log2temp = [math.log2(i) for i in temp]
+    diff = list(map(sub, log2temp, [round(i) for i in log2temp]))
+    diff = [abs(i) for i in diff]
     idx = diff.index(min(diff))
     if idx==0 or idx==3 or idx==4:
         chorus[k] = freq_f0*2**(4/12)
@@ -30,5 +34,7 @@ for k, freq_f0 in enumerate(f0):
         chorus[k] = freq_f0*2**(3/12)
         
 y = pw.synthesize(chorus, sp, ap, fs)
-mix = y[0:len(x)-len(y)] + x
+mix = y[0:len(x)-len(y)]*0.6 + x
 sd.play(mix, fs)
+
+write('f1_005_chorus_up3.wav', fs, mix)
