@@ -6,7 +6,7 @@ import math
 from operator import sub
 from scipy.io.wavfile import write
 
-x, fs = librosa.load('C:/Users/AHG/Desktop/ASAS/Final_project/data/f1_005.wav', dtype='double', sr=None)
+x, fs = librosa.load('../data/f1_005.wav', dtype='double', sr=None)
 
 
 _f0, t = pw.dio(x, fs)    # raw pitch extractor
