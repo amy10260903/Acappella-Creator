@@ -11,6 +11,7 @@ from madmom.features.beats import BeatTrackingProcessor
 from madmom.features.beats import RNNBeatProcessor
 #import utils
 import matplotlib.pyplot as plt
+import scipy
 import numpy as np
 import heapq
 import pyworld as pw
@@ -46,36 +47,37 @@ def find_cand(result, n):
     #beat_cand = [np.array(i) for i in beat_cand]
     return beat_cand
 
-    
-
 def gen_beat(all_data, fs, fps, cand):
-    proc = BeatTrackingProcessor(fps=fps)
+    fps = librosa.samples_to_frames(fs, hop_length=hop_len, n_fft=win_len)
+    fps = 100
+    print(fps)
+    proc = BeatTrackingProcessor(look_aside=0.2, fps=fps)
     act = RNNBeatProcessor()(all_data)
     beat_times = proc(act)
     
+    song_len = librosa.samples_to_time(data.shape, sr=fs)[0]
     beat = np.zeros(all_data.shape)
-    beat_samples = librosa.time_to_samples(beat_times, sr=fs)
+    idx = np.where(beat_times <= song_len)[0]
+    new_beat_times = np.zeros(idx.shape)
+    new_beat_times[idx] = beat_times[idx]
+    
+    beat_samples = librosa.time_to_samples(new_beat_times, sr=fs)
     for s in beat_samples:
-        start = librosa.frames_to_samples(cand[0], hop_len, n_fft=win_len)
-        end = librosa.frames_to_samples(cand[-1], hop_len, n_fft=win_len)
+        print(s)
+        start = librosa.frames_to_samples(beat_cand[2][0], hop_len, n_fft=win_len)
+        end = librosa.frames_to_samples(beat_cand[2][-1], hop_len, n_fft=win_len)
         cand_len = end-start
-        print(cand_len, start, end)
+        if s+cand_len > beat.shape:
+            break
         beat[s:s+cand_len] = data[start:end]
-    return beat, beat_samples
+    
+    return beat, new_beat_times
 
-#praatEXE = 'C:/Users/user/Desktop/Praat.exe'
-praatEXE = 'D:/Acapella-Creator/Praat.exe'
-#all_song = 'C:/Users/user/Desktop/mir_final/lemon.wav'
-#all_song = 'D:/Acapella-Creator/data/lemon.wav'
-all_song = 'D:/Acapella-Creator/result/f1_005_chorus_up3.wav'
-#file = 'C:/Users/user/Desktop/mir_final/lemon_first_sent.wav'
-#file = 'C:/Users/user/Desktop/mir_final/lemon_sec_sent.wav'
-#file = 'C:/Users/user/Desktop/mir_final/lemon_third_sent.wav'
-#file = 'C:/Users/user/Desktop/mir_final/lemon_forth_sent.wav'
-#file = 'D:/Acapella-Creator/data/lemon.wav'
-file = 'D:/Acapella-Creator/result/f1_005_chorus_up3.wav'
-data, fs = librosa.load(file)
-all_data, fs = librosa.load(all_song)
+praatEXE = 'C:/Users/user/Desktop/Praat.exe'
+all_song = 'C:/Users/user/Desktop/mir_final/sudden_miss_you.wav'
+file = 'C:/Users/user/Desktop/mir_final/sudden_miss_you.wav'
+data, fs = librosa.load(file, sr=None)
+all_data, fs = librosa.load(all_song, sr=None)
 
 ''' Param setting '''
 win_len = 2048 # n of fft
@@ -90,7 +92,6 @@ time_step = librosa.frames_to_time(range(rmse.shape[-1]), sr=fs, hop_length=hop_
 
 ''' ZCR, pitch and energy to find candidates for beat'''
 zcr = librosa.feature.zero_crossing_rate(data, frame_length=win_len, hop_length=hop_len)
-'''
 energy = extractIntensity(file, 'C:/Users/user/Desktop/mir_final/energy.txt', praatEXE,
                           minPitch=65, sampleStep=librosa.samples_to_time(hop_len, fs), 
                           forceRegenerate=True, undefinedValue=0)
@@ -99,23 +100,19 @@ pitch = extractPitch(file, 'C:/Users/user/Desktop/mir_final/pitch.txt', praatEXE
                              silenceThreshold=0.01, forceRegenerate=True,
                              undefinedValue=0, medianFilterWindowSize=0,
                              pitchQuadInterp=None)
-'''
-energy = extractIntensity(file, 'D:/Acapella-Creator/result/energy.txt', praatEXE,
-                          minPitch=65, sampleStep=librosa.samples_to_time(hop_len, fs), 
-                          forceRegenerate=True, undefinedValue=0)
-pitch = extractPitch(file, 'D:/Acapella-Creator/result/pitch.txt', praatEXE,
-             sampleStep=librosa.samples_to_time(hop_len, fs), minPitch=65, maxPitch=1047,
-                             silenceThreshold=0.01, forceRegenerate=True,
-                             undefinedValue=0, medianFilterWindowSize=0,
-                             pitchQuadInterp=None)
 pitch = np.array(pitch)[:, -1]
 energy = np.array(energy)[:, -1]
 
+
 ''' Just plot '''
-# =============================================================================
 nor_pitch = norm_01(pitch)
 nor_ener = norm_01(energy)
 nor_zcr = norm_01(zcr[0,:])
+
+tmp_zcr = np.zeros(nor_zcr.shape)
+idx = np.where(np.bitwise_and(nor_zcr[1:]>=0.25, nor_ener>0.6))[0]
+tmp_zcr[idx] = nor_zcr[idx]
+
 plt.close()
 plt.figure()
 plt.subplot(4,1,1)
@@ -125,23 +122,33 @@ plt.plot(time_step[1:], nor_pitch)
 plt.subplot(4,1,3)
 plt.plot(time_step, nor_zcr.T)
 plt.subplot(4,1,4)
-plt.plot(data)
-plt.savefig('D:/Acapella-Creator/result/ener_pitch_zcr.png')
-# =============================================================================
+plt.plot(time_step, tmp_zcr.T)
 ''' Find samples where pitch==0 and energy>0 '''
-idx = np.where(np.bitwise_and(pitch==0, nor_ener>0.6))[0]
+idx = np.where(np.bitwise_and(np.bitwise_and(nor_pitch==0, nor_ener>0.6), nor_zcr[1:]>0.25))[0]
 result = group_consecutives(idx) # find consecutive samples as candidates for beats
 ''' You can choose some examples in result to hear '''
-rr = result[10] 
+# =============================================================================
+# rr = result[27]
+# start = librosa.frames_to_samples(rr[0], hop_len, n_fft=win_len)
+# end = librosa.frames_to_samples(rr[-1], hop_len, n_fft=win_len)
+# tmpp = np.concatenate((data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end]), axis=0)
+# sd.play(tmpp*10, fs)
+# =============================================================================
+
+
+beat_cand = find_cand(result, 5)
+
+rr = beat_cand[2]
 start = librosa.frames_to_samples(rr[0], hop_len, n_fft=win_len)
 end = librosa.frames_to_samples(rr[-1], hop_len, n_fft=win_len)
 tmpp = np.concatenate((data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end]), axis=0)
-sd.play(tmpp*10, fs)
+#sd.play(tmpp*10, fs)
 #sd.play(data[start:end], fs)
 
-# %%
-beat_cand = find_cand(result, 3)
-beat_1,_ = gen_beat(all_data, fs, 100, beat_cand[2])
-beat_2,beat_samples = gen_beat(all_data, fs, 50, beat_cand[1])
-sd.play(beat_1*4 + beat_2*5+ all_data*3, fs)
- 
+beat, beat_times = gen_beat(all_data, fs, 100, beat_cand[2])
+
+click = librosa.clicks(beat_times, sr=fs, hop_length=hop_len)
+clk_tmp = np.zeros(all_data.shape)
+clk_tmp[:click.shape[0]] = click 
+sd.play(data*4+clk_tmp*2, fs)
+
