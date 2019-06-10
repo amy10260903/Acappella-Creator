@@ -49,7 +49,7 @@ def find_cand(result, n):
 
 def gen_beat(all_data, fs, fps, cand):
     fps = librosa.samples_to_frames(fs, hop_length=hop_len, n_fft=win_len)
-    #fps = 100
+    fps = 100
     print(fps)
     proc = BeatTrackingProcessor(look_aside=0.2, fps=fps)
     act = RNNBeatProcessor()(all_data)
@@ -63,16 +63,19 @@ def gen_beat(all_data, fs, fps, cand):
     
     beat_samples = librosa.time_to_samples(new_beat_times, sr=fs)
     for s in beat_samples:
+        print(s)
         start = librosa.frames_to_samples(beat_cand[2][0], hop_len, n_fft=win_len)
         end = librosa.frames_to_samples(beat_cand[2][-1], hop_len, n_fft=win_len)
         cand_len = end-start
+        if s+cand_len > beat.shape:
+            break
         beat[s:s+cand_len] = data[start:end]
     
-    return beat, beat_samples
+    return beat, new_beat_times
 
 praatEXE = 'C:/Users/user/Desktop/Praat.exe'
-all_song = 'C:/Users/user/Desktop/mir_final/f1_005.wav'
-file = 'C:/Users/user/Desktop/mir_final/f1_005.wav'
+all_song = 'C:/Users/user/Desktop/mir_final/sudden_miss_you.wav'
+file = 'C:/Users/user/Desktop/mir_final/sudden_miss_you.wav'
 data, fs = librosa.load(file, sr=None)
 all_data, fs = librosa.load(all_song, sr=None)
 
@@ -142,6 +145,10 @@ tmpp = np.concatenate((data[start:end],data[start:end],data[start:end],data[star
 #sd.play(tmpp*10, fs)
 #sd.play(data[start:end], fs)
 
-beat, beat_samples = gen_beat(all_data, fs, 100, beat_cand[2])
+beat, beat_times = gen_beat(all_data, fs, 100, beat_cand[2])
 
-sd.play(data*4+beat*2, fs)
+click = librosa.clicks(beat_times, sr=fs, hop_length=hop_len)
+clk_tmp = np.zeros(all_data.shape)
+clk_tmp[:click.shape[0]] = click 
+sd.play(data*4+clk_tmp*2, fs)
+
