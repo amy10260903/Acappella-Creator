@@ -9,13 +9,28 @@ import soundfile as sf
 import librosa
 from madmom.features.beats import BeatTrackingProcessor
 from madmom.features.beats import RNNBeatProcessor
-import utils
+#import utils
 import matplotlib.pyplot as plt
+from audiolazy import lazy_synth
 import scipy
 import numpy as np
 import heapq
 import pyworld as pw
 from praatio.pitch_and_intensity import extractPitch, extractIntensity
+
+def cal_beat_samples(all_data, fs):
+    fps = librosa.samples_to_frames(fs, hop_length=hop_len, n_fft=win_len)
+    fps = 100
+    proc = BeatTrackingProcessor(look_aside=0.2, fps=fps)
+    act = RNNBeatProcessor()(all_data)
+    beat_times = proc(act)
+    
+    song_len = librosa.samples_to_time(data.shape, sr=fs)[0]
+    idx = np.where(beat_times <= song_len)[0]
+    new_beat_times = np.zeros(idx.shape)
+    new_beat_times[idx] = beat_times[idx]
+    beat_samples = librosa.time_to_samples(new_beat_times, sr=fs)
+    return beat_samples
 
 def norm_01(x):
     return (x-min(x))/(max(x)-min(x))
@@ -34,7 +49,7 @@ def group_consecutives(vals, step=1):
         expect = v + step
     return result
 
-def find_cand(result, n):
+def find_n_largelen_cand(result, n):
     cand_len = []
     beat_cand = []
     for i in result:
@@ -47,20 +62,8 @@ def find_cand(result, n):
     #beat_cand = [np.array(i) for i in beat_cand]
     return beat_cand
 
-def gen_hihat(all_data, fs, fps, cand):
-    fps = librosa.samples_to_frames(fs, hop_length=hop_len, n_fft=win_len)
-    fps = 100
-    print(cand)
-    proc = BeatTrackingProcessor(look_aside=0.2, fps=fps)
-    act = RNNBeatProcessor()(all_data)
-    beat_times = proc(act)
-    
-    song_len = librosa.samples_to_time(data.shape, sr=fs)[0]
+def gen_hihat(all_data, fs, beat_samples, cand):
     hihat = np.zeros(all_data.shape)
-    idx = np.where(beat_times <= song_len)[0]
-    new_beat_times = np.zeros(idx.shape)
-    new_beat_times[idx] = beat_times[idx]
-    beat_samples = librosa.time_to_samples(new_beat_times, sr=fs)
     start = librosa.frames_to_samples(cand[0], hop_len, n_fft=win_len)
     end = librosa.frames_to_samples(cand[-1], hop_len, n_fft=win_len)
     cand_len = end-start
@@ -75,8 +78,35 @@ def gen_hihat(all_data, fs, fps, cand):
             if s+cand_len > hihat.shape:
                 break
             hihat[s:s+cand_len] = data[start:end]
+    return hihat
+
+def gen_drum(all_data, fs, beat_samples, cand):
+    cand_len = len(cand)
+    beat = np.zeros(all_data.shape)
+    is_drum = np.zeros(beat_samples.shape)
+    group = np.arange(len(beat_samples)) % 8
+    idx = np.where((group==1) | (group==6))
+    is_drum[idx] = 1
     
-    return hihat, new_beat_times, beat_samples
+    for i, s in enumerate(beat_samples):
+        if is_drum[i]==1:
+            if s+cand_len > beat.shape:
+                break
+            beat[s:s+cand_len] = cand
+    
+    add_idx = np.where((group==5))[0]
+    add_list = []
+    for i, s in enumerate(beat_samples[add_idx]):
+        add_list.append(beat_samples[add_idx[i]] + int((beat_samples[add_idx[i]+1]-beat_samples[add_idx[i]])*0.5) )
+        add_list.append(beat_samples[add_idx[i]-1] + int((beat_samples[add_idx[i]]-beat_samples[add_idx[i]-1])*0.5) )
+    add_list = np.array(add_list)
+    
+    semi_drum = cand[:int(len(cand)/2)]
+    for i, s in enumerate(add_list):
+        if s+int(len(cand)/2) > beat.shape:
+            break
+        beat[s:s+int(len(cand)/2)] = semi_drum
+    return beat
 
 praatEXE = 'C:/Users/user/Desktop/Praat.exe'
 all_song = 'C:/Users/user/Desktop/mir_final/lemon.wav'
@@ -108,159 +138,49 @@ pitch = extractPitch(file, 'C:/Users/user/Desktop/mir_final/pitch.txt', praatEXE
 pitch = np.array(pitch)[:, -1]
 energy = np.array(energy)[:, -1]
 
-
-''' Just plot '''
 nor_pitch = norm_01(pitch)
 nor_ener = norm_01(energy)
 nor_zcr = norm_01(zcr[0,:])
-
-tmp_zcr = np.zeros(nor_zcr.shape)
-idx = np.where(np.bitwise_and(nor_zcr[1:]>=0.25, nor_ener>0.6))[0]
-tmp_zcr[idx] = nor_zcr[idx]
-
-# =============================================================================
-# plt.close()
-# plt.figure()
-# plt.subplot(4,1,1)
-# plt.plot(time_step[1:], nor_ener)
-# plt.subplot(4,1,2)
-# plt.plot(time_step[1:], nor_pitch)
-# plt.subplot(4,1,3)
-# plt.plot(time_step, nor_zcr.T)
-# plt.subplot(4,1,4)
-# plt.plot(time_step, tmp_zcr.T)
-# =============================================================================
+# %% find hihat cand and gen hihat
 ''' Find samples where pitch==0 and energy>0 '''
 idx = np.where(np.bitwise_and(np.bitwise_and(nor_pitch==0, nor_ener>0.6), nor_zcr[1:]>0.25))[0]
 result = group_consecutives(idx) # find consecutive samples as candidates for beats
-''' You can choose some examples in result to hear '''
-# =============================================================================
-# rr = result[27]
-# start = librosa.frames_to_samples(rr[0], hop_len, n_fft=win_len)
-# end = librosa.frames_to_samples(rr[-1], hop_len, n_fft=win_len)
-# tmpp = np.concatenate((data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end]), axis=0)
-# sd.play(tmpp*10, fs)
-# =============================================================================
+beat_cand = find_n_largelen_cand(result, 5)
 
-beat_cand = find_cand(result, 5)
-
-rr = beat_cand[2]
+rr = beat_cand[np.random.randint(5)]
 start = librosa.frames_to_samples(rr[0], hop_len, n_fft=win_len)
 end = librosa.frames_to_samples(rr[-1], hop_len, n_fft=win_len)
 tmpp = np.concatenate((data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end]), axis=0)
 #sd.play(tmpp*10, fs)
 beattt = data[start:end] 
 
-hihat, beat_times, beat_samples = gen_hihat(all_data, fs, 100, beat_cand[2])
-
-# %%
+beat_samples = cal_beat_samples(all_data, fs)
+hihat = gen_hihat(all_data, fs, beat_samples, beat_cand[2])
+# %% find drum cand and gen drum
 spectral_novelty = librosa.onset.onset_strength(data, sr=fs)
 frames = np.arange(len(spectral_novelty))
 t = librosa.frames_to_time(frames, sr=fs)
-# =============================================================================
-# plt.figure(figsize=(15, 4))
-# plt.plot(t, spectral_novelty, 'r-')
-# plt.xlim(0, t.max())
-# plt.xlabel('Time (sec)')
-# plt.legend(('Spectral Novelty',))
-# =============================================================================
 
-nor_pitch = norm_01(pitch)
-nor_ener = norm_01(energy)
-nor_zcr = norm_01(zcr[0,:])
-
-idx = np.where(nor_ener>0.8)[0]
-idx = np.where(spectral_novelty[idx]>0.8)[0]
+idx = np.where(np.bitwise_and(nor_pitch>0.2, nor_ener>0.8))[0]
+idx = np.where(spectral_novelty[idx]>0.85)[0]
 result = group_consecutives(idx)
-drum_cand = find_cand(result, 8)
-rr = drum_cand[2]
-start = librosa.frames_to_samples(rr[0]+10, hop_len, n_fft=win_len)
-end = librosa.frames_to_samples(rr[-1]+11, hop_len, n_fft=win_len)
+drum_cand = find_n_largelen_cand(result, 5)
+rr = drum_cand[np.random.randint(5)]
+start = librosa.frames_to_samples(rr[0]+5, hop_len, n_fft=win_len)
+end = librosa.frames_to_samples(rr[-1]+6, hop_len, n_fft=win_len)
 tmpp = np.concatenate((data[start:end],data[start:end],data[start:end],data[start:end]), axis=0)
 drum = data[start:end]
-#sd.play(tmpp, fs)
-sd.play(data[start:end], fs)
 
 _f0, t = pw.dio(drum, fs)    # raw pitch extractor
 f0 = pw.stonemask(drum, _f0, t, fs)  # pitch refinement
+#f0 = f0[np.where(f0>0)]
 sp = pw.cheaptrick(drum, f0, t, fs)  # extract smoothed spectrogram
 ap = pw.d4c(drum, f0, t, fs)         # extract aperiodicity
-y = pw.synthesize(f0-120, sp, ap, fs)
+diff = np.mean(f0) - 120
+y = pw.synthesize(f0-diff, sp, ap, fs)
 drum = y
-test = []
-sapce = np.zeros(drum.shape)
-test.extend(drum)
-test.extend(sapce)
-test.extend(beattt)
-test.extend(sapce)
-test.extend(drum)
-test.extend(drum[int(0.5*drum.shape[0]):])
-test.extend(drum)
-test.extend(beattt)
-test.extend(sapce)
-test.extend(sapce)
-test.extend(drum)
-test.extend(sapce)
-test.extend(beattt)
-test.extend(sapce)
-test.extend(drum)
-test.extend(drum[int(0.5*drum.shape[0]):])
-sss = np.zeros(data.shape)
-sss[:np.array(test).shape[0]] = np.array(test)
-#sd.play(sss*5+data*5, fs)
+adsr = list(lazy_synth.adsr(len(drum), len(drum)*0.1, len(drum)*0.1, len(drum)*0.1, len(drum)*0.7))
 
-'''gen drum'''
-fps = librosa.samples_to_frames(fs, hop_length=hop_len, n_fft=win_len)
-fps = 100
-print(fps)
-proc = BeatTrackingProcessor(look_aside=0.2, fps=fps)
-act = RNNBeatProcessor()(all_data)
-beat_times = proc(act)
-
-song_len = librosa.samples_to_time(data.shape, sr=fs)[0]
-beat = np.zeros(all_data.shape)
-idx = np.where(beat_times <= song_len)[0]
-new_beat_times = np.zeros(idx.shape)
-new_beat_times[idx] = beat_times[idx]
-
-beat_samples = librosa.time_to_samples(new_beat_times, sr=fs)
-cand_len = len(drum)
-
-end = len(beat_samples)
-is_drum = np.zeros(beat_samples.shape)
-group = np.arange(len(beat_samples)) % 8
-idx = np.where((group==1) | (group==6))
-is_drum[idx] = 1
-
-for i, s in enumerate(beat_samples):
-    if is_drum[i]==1:
-        print(s)
-        if s+cand_len > beat.shape:
-            break
-        beat[s:s+cand_len] = drum
-
-
-add_idx = np.where((group==5))[0]
-add_list = []
-for i, s in enumerate(beat_samples[add_idx]):
-    print(i,s, add_idx[i])
-    add_list.append(beat_samples[add_idx[i]] + int((beat_samples[add_idx[i]+1]-beat_samples[add_idx[i]])*0.5) )
-    add_list.append(beat_samples[add_idx[i]-1] + int((beat_samples[add_idx[i]]-beat_samples[add_idx[i]-1])*0.5) )
-    #add_list.append(int(0.8*(s+beat_samples[add_idx[i]+1])))
-add_list = np.array(add_list)
-
-semi_drum = drum[:int(len(drum)/2)]
-for i, s in enumerate(add_list):
-    print(s)
-    if s+int(len(drum)/2) > beat.shape:
-        break
-    beat[s:s+int(len(drum)/2)] = semi_drum
-
-sd.play(beat*0.5+hihat+data, fs)
-rr = drum_cand[3]
-start = librosa.frames_to_samples(rr[0]+10, hop_len, n_fft=win_len)
-end = librosa.frames_to_samples(rr[-1]+11, hop_len, n_fft=win_len)
-tmpp = np.concatenate((data[start:end],data[start:end],data[start:end],data[start:end]), axis=0)
-drum = data[start:end]
-#sd.play(tmpp, fs)
-sd.play(data[start:end], fs)
+drummm = gen_drum(all_data, fs, beat_samples, drum*librosa.util.normalize(adsr))
+#sd.play(drummm, fs)
+sd.play(drummm*0.4+hihat*0.3+all_data, fs)
