@@ -46,7 +46,8 @@ ap = pw.d4c(x, f0, t, fs)         # extract aperiodicity
 #sd.play(mix, fs)
 
 #%% shift to 'C' tonality and generate chorus
-f0_C = f0*2**(-idx_ton/12)
+tune=1  # 調整到對的大調
+f0_C = f0*2**(-(idx_ton-tune)/12)
 
 
 chorus_up = np.zeros(f0.size)
@@ -71,7 +72,7 @@ for k, freq_f0 in enumerate(f0_C):
         chorus_down[k] = freq_f0*2**(-3/12)   #降三度
 # =============================================================================
 
-chorus_up = chorus_up*2**(idx_ton/12)
+chorus_up = chorus_up*2**((idx_ton-tune)/12)
 chorus_down = chorus_down*2**(idx_ton/12)
 chorus_down_octave = f0/2
 
