@@ -49,7 +49,8 @@ ap = pw.d4c(x, f0, t, fs)         # extract aperiodicity
 f0_C = f0*2**(-idx_ton/12)
 
 
-chorus = np.zeros(f0.size)
+chorus_up = np.zeros(f0.size)
+chorus_down = np.zeros(f0.size)
 phonetic = [16.352, 18.354, 20.602, 21.827, 24.5, 27.5, 30.868]  # basic frequencies of phonetic
 for k, freq_f0 in enumerate(f0_C):
     if freq_f0==0:
@@ -59,22 +60,28 @@ for k, freq_f0 in enumerate(f0_C):
     diff = list(map(sub, log2temp, [round(i) for i in log2temp]))
     diff = [abs(i) for i in diff]
     idx = diff.index(min(diff))
-#    if idx==0 or idx==3 or idx==4:
-#        chorus[k] = freq_f0*2**(4/12)
-#    else:
-#        chorus[k] = freq_f0*2**(3/12)  #升三度
-    if idx==2 or idx==5 or idx==6:
-        chorus[k] = freq_f0*2**(-4/12)
+    if idx==0 or idx==3 or idx==4:
+        chorus_up[k] = freq_f0*2**(4/12)
     else:
-        chorus[k] = freq_f0*2**(-3/12)   #降三度
+        chorus_up[k] = freq_f0*2**(3/12)  #升三度
+# =============================================================================
+    if idx==2 or idx==5 or idx==6:
+        chorus_down[k] = freq_f0*2**(-4/12)
+    else:
+        chorus_down[k] = freq_f0*2**(-3/12)   #降三度
+# =============================================================================
 
-chorus = chorus*2**(-idx_ton/12)
+chorus_up = chorus_up*2**(idx_ton/12)
+chorus_down = chorus_down*2**(idx_ton/12)
+chorus_down_octave = f0/2
 
-y = pw.synthesize(chorus, sp, ap, fs)
-mix = y[0:len(x)-len(y)]*0.6 + x
-#sd.play(mix, fs)
+y_up = pw.synthesize(chorus_up, sp, ap, fs)
+y_down = pw.synthesize(chorus_down, sp, ap, fs)
+y_down_octave = pw.synthesize(chorus_down_octave, sp, ap, fs)
+mix = x + y_down_octave[0:len(x)-len(y_down_octave)]*0.2 + y_up[0:len(x)-len(y_up)]*0.5 #+ y_down[0:len(x)-len(y_down)]*0.5
+sd.play(mix, fs)
 
-#write('f1_005_chorus_up3.wav', fs, mix)
+#write('lemon_chorus_up3.wav', fs, mix)
 #plt.figure()
 #r = len(x)/len(f0)/fs
 #plt.plot(r*np.linspace(0,len(f0),len(f0)),f0)
