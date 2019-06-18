@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 from audiolazy import lazy_synth
 import scipy
 import numpy as np
+import pdb
 import heapq
 import pyworld as pw
 from praatio.pitch_and_intensity import extractPitch, extractIntensity
@@ -56,23 +57,35 @@ def group_consecutives(vals, step=1):
 
 def find_n_largelen_cand(result, n):
     cand_len = []
-    beat_cand = []
+    output = []
     for i in result:
         cand_len.append(len(i))
     cand = heapq.nlargest(n, cand_len)
     cand = list(set(cand))
     for i in cand:
         idx = np.where(i == np.array(cand_len))[0]
-        beat_cand.extend(np.array(result)[idx])
-    #beat_cand = [np.array(i) for i in beat_cand]
-    return beat_cand
+        output.extend(np.array(result)[idx])
+    #cand = [np.array(i) for i in cand]
+    return output
+
+def find_n_smalllen_cand(result, n):
+    cand_len = []
+    output = []
+    for i in result:
+        cand_len.append(len(i))
+    cand = heapq.nsmallest(n, cand_len)
+    cand = list(set(cand))
+    for i in cand:
+        idx = np.where(i == np.array(cand_len))[0]
+        output.extend(np.array(result)[idx])
+    #cand = [np.array(i) for i in cand]
+    return output
 
 def gen_hihat(all_data, fs, beat_samples, cand):
     hihat = np.zeros(all_data.shape)
     start = librosa.frames_to_samples(cand[0], hop_len, n_fft=win_len)
     end = librosa.frames_to_samples(cand[-1], hop_len, n_fft=win_len)
     cand_len = end-start
-    
     i = 3
     is_hihat = np.zeros(beat_samples.shape)
     while i < len(beat_samples):
@@ -194,14 +207,14 @@ start = librosa.frames_to_samples(rr[0], hop_len, n_fft=win_len)
 end = librosa.frames_to_samples(rr[-1], hop_len, n_fft=win_len)
 tmpp = np.concatenate((data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end],data[start:end]), axis=0)
 #sd.play(tmpp*10, fs)
-beattt = data[start:end] 
 
 beat_samples = cal_beat_samples(all_data, fs)
-hihat = gen_hihat(all_data, fs, beat_samples, beat_cand[2])
+hihat = gen_hihat(all_data, fs, beat_samples, rr)
 # %% find drum cand and gen drum
 spectral_novelty = librosa.onset.onset_strength(data, sr=fs)
 frames = np.arange(len(spectral_novelty))
 t = librosa.frames_to_time(frames, sr=fs)
+<<<<<<< HEAD
 
 idx = np.where(np.bitwise_and(nor_pitch>0.2, nor_ener>0.8))[0]
 idx = np.where(spectral_novelty[idx]>0.8)[0]
@@ -211,6 +224,23 @@ rr = drum_cand[np.random.randint(5)]
 start = librosa.frames_to_samples(rr[0]+11, hop_len, n_fft=win_len)
 end = librosa.frames_to_samples(rr[-1]+12, hop_len, n_fft=win_len)
 tmpp = np.concatenate((data[start:end],data[start:end],data[start:end],data[start:end]), axis=0)
+=======
+idx = np.where(np.bitwise_and(np.bitwise_and(nor_pitch>0.2, nor_ener>0.8), nor_zcr[1:]<0.2))[0]
+idx = np.where(spectral_novelty[idx]>0.8)[0]
+# =============================================================================
+# idx = np.where(np.bitwise_and(nor_pitch>0.2, nor_ener>0.8))[0]
+# idx = np.where(spectral_novelty[idx]>0.85)[0]
+# =============================================================================
+result = group_consecutives(idx)
+drum_cand = find_n_largelen_cand(result, 5)
+ii = np.random.randint(5)
+rr = drum_cand[ii]
+start = librosa.frames_to_samples(rr[0]-5, hop_len, n_fft=win_len)
+end = librosa.frames_to_samples(rr[-1]-5, hop_len, n_fft=win_len)
+tmpp = np.concatenate((data[start:end],data[start:end]), axis=0)
+print(ii)
+#sd.play(tmpp*10, fs)
+>>>>>>> e02951b817003a193baddd9b18aa58a8ef643548
 drum = data[start:end]
 
 _f0, t = pw.dio(drum, fs)    # raw pitch extractor
@@ -218,12 +248,17 @@ f0 = pw.stonemask(drum, _f0, t, fs)  # pitch refinement
 #f0 = f0[np.where(f0>0)]
 sp = pw.cheaptrick(drum, f0, t, fs)  # extract smoothed spectrogram
 ap = pw.d4c(drum, f0, t, fs)         # extract aperiodicity
+<<<<<<< HEAD
 diff = np.mean(f0) - 95
+=======
+diff = np.mean(f0) - 80
+>>>>>>> e02951b817003a193baddd9b18aa58a8ef643548
 y = pw.synthesize(f0-diff, sp, ap, fs)
 drum = y
 adsr = list(lazy_synth.adsr(len(drum), len(drum)*0.1, len(drum)*0.1, len(drum)*0.1, len(drum)*0.7))
 
 drummm = gen_drum(all_data, fs, beat_samples, drum*librosa.util.normalize(adsr))
+<<<<<<< HEAD
 bass = gen_bass(all_data, fs, beat_samples)
 #chorus, fs = librosa.load('../result/lemon_chorus_mix.wav', sr=None)
 #%%
@@ -309,3 +344,7 @@ mix2x[random2:random2+250000] = y_up[random2:random2+250000]
 chorus = x + y_down_octave[0:len(x)-len(y_down_octave)]*0.2 + mix1x*0.5 + mix2x*0.5
 #sd.play(drummm, fs)
 sd.play(drummm*0.8+hihat*0.3+bass*0.8+all_data+chorus, fs)
+=======
+#sd.play(drummm+hihat, fs)
+sd.play(drummm+hihat*1.2+all_data, fs)
+>>>>>>> e02951b817003a193baddd9b18aa58a8ef643548

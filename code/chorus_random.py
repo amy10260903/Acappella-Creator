@@ -17,7 +17,7 @@ import utils # self-defined utils.py file
 n_fft = 100	# (ms)
 hop_length = 25	# (ms)
 
-sr, y = utils.read_wav('C:/Users/user/Downloads/Acapella-Creator-master (1)/Acapella-Creator-master/data/lemon.wav')
+sr, y = utils.read_wav('C:/Users/user/Downloads/Acapella-Creator-master (1)/Acapella-Creator-master/data/miss.wav')
 cxx = librosa.feature.chroma_cqt(y=y, sr=sr)
 
 #%% find tonality
@@ -36,8 +36,11 @@ else:
 KEY = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
 idx_ton = KEY.index(key_ind)  # shift number
 
+plt.figure()
+plt.plot(cxx)
+plt.savefig('cxx.png')
 #%% vocoder analysis
-x, fs = librosa.load('../data/lemon.wav', dtype='double', sr=None)
+x, fs = librosa.load('../data/miss.wav', dtype='double', sr=None)
 
 _f0, t = pw.dio(x, fs)    # raw pitch extractor
 f0 = pw.stonemask(x, _f0, t, fs)  # pitch refinement
@@ -46,7 +49,13 @@ ap = pw.d4c(x, f0, t, fs)         # extract aperiodicity
 #y = pw.synthesize(f0*2**(3/12), sp, ap, fs)
 #mix = y[0:len(x)-len(y)] + x
 #sd.play(mix, fs)
+plt.figure()
+plt.plot(f0)
+plt.savefig('f0.png')
 
+plt.figure()
+plt.plot(sp)
+plt.savefig('sp.png')
 #%% shift to 'C' tonality and generate chorus
 tune=1  # 調整到對的大調
 f0_C = f0*2**(-(idx_ton-tune)/12)
@@ -86,14 +95,14 @@ y_down_octave = pw.synthesize(chorus_down_octave, sp, ap, fs)
 
 #################random####################
 random1 = random.randrange(0,round(len(x)*0.4))
-random2 = random.randrange(round(len(x)*0.4),len(x))
+random2 = random.randrange(round(len(x)*0.4),len(x)-250000)
 mix1x = np.zeros((len(x)))
-mix1x[random1:random1+250000] = y_up[random1:random1+250000]
+mix1x[random1:random1+350000] = y_up[random1:random1+350000]
 mix2x = np.zeros((len(x)))
 mix2x[random2:random2+250000] = y_up[random2:random2+250000]
-mix = x + y_down_octave[0:len(x)-len(y_down_octave)]*0.2 + mix1x*0.5 + mix2x*0.5
+mix = x + y_down_octave[0:len(x)-len(y_down_octave)]*0.2 + mix1x*0.8 + mix2x*0.8
 print('random1=',random1)
 
 print('random2=',random2)
-write('f1_005_chorus_mix5.wav', fs, mix)
+write('chorus_mix.wav', fs, mix)
 
