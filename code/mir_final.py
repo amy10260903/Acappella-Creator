@@ -9,7 +9,7 @@ import soundfile as sf
 import librosa
 from madmom.features.beats import BeatTrackingProcessor
 from madmom.features.beats import RNNBeatProcessor
-#import utils
+import utils
 import matplotlib.pyplot as plt
 from audiolazy import lazy_synth
 import scipy
@@ -17,6 +17,11 @@ import numpy as np
 import heapq
 import pyworld as pw
 from praatio.pitch_and_intensity import extractPitch, extractIntensity
+from scipy.io.wavfile import write
+from scipy.stats import pearsonr
+import random
+import math
+from operator import sub
 
 def cal_beat_samples(all_data, fs):
     fps = librosa.samples_to_frames(fs, hop_length=hop_len, n_fft=win_len)
@@ -80,6 +85,41 @@ def gen_hihat(all_data, fs, beat_samples, cand):
             hihat[s:s+cand_len] = data[start:end]
     return hihat
 
+def gen_bass(all_data, fs, beat_samples):
+    #cand_len = 120000
+    cand_len = int((beat_samples[12] - beat_samples[0])*0.8)
+    cand_delay_len = int(cand_len/2)
+    beat = np.zeros(all_data.shape)
+    is_bass = np.zeros(beat_samples.shape)
+    group = np.arange(len(beat_samples)) % 16
+    down_idx = np.where((group==0))
+    is_bass[down_idx] = 1
+    repeat_idx = np.where((group==8))
+    is_bass[repeat_idx] = 2
+    repeat2_idx = np.where((group==12))
+    is_bass[repeat2_idx] = 3
+    
+    for i, s in enumerate(beat_samples):
+        if i+4 < beat_samples.shape[0]:
+            s1 = beat_samples[i+4]
+            if is_bass[i]==1:
+                if s1+cand_len > beat.shape:
+                    break
+                cand = all_data[s:s+cand_len]
+                cand2 = all_data[s:s+cand_delay_len]
+                beat[s1:s1+cand_len] = cand*0.6
+            '''
+            elif is_bass[i]==2:
+                if s1+cand_delay_len > beat.shape:
+                    break
+                beat[s1:s1+cand_delay_len] = cand2*0.5
+            elif is_bass[i]==3:
+                if s1+cand_delay_len > beat.shape:
+                    break
+                beat[s1:s1+cand_delay_len] = cand2*0.3
+            '''
+    return beat
+
 def gen_drum(all_data, fs, beat_samples, cand):
     cand_len = len(cand)
     beat = np.zeros(all_data.shape)
@@ -108,9 +148,11 @@ def gen_drum(all_data, fs, beat_samples, cand):
         beat[s:s+int(len(cand)/2)] = semi_drum
     return beat
 
-praatEXE = 'C:/Users/user/Desktop/Praat.exe'
-all_song = 'C:/Users/user/Desktop/mir_final/lemon.wav'
-file = 'C:/Users/user/Desktop/mir_final/lemon.wav'
+praatEXE = 'D:/Acapella-Creator/Praat.exe'
+all_song = 'D:/Acapella-Creator/data/lemon.wav'
+file = 'D:/Acapella-Creator/data/lemon.wav'
+#all_song = 'D:/Acapella-Creator/data/sudden_miss_you_cut.wav'
+#file = 'D:/Acapella-Creator/data/sudden_miss_you_cut.wav'
 data, fs = librosa.load(file, sr=None, dtype='double')
 all_data, fs = librosa.load(all_song, sr=None, dtype='double')
 
@@ -127,10 +169,10 @@ time_step = librosa.frames_to_time(range(rmse.shape[-1]), sr=fs, hop_length=hop_
 
 ''' ZCR, pitch and energy to find candidates for beat'''
 zcr = librosa.feature.zero_crossing_rate(data, frame_length=win_len, hop_length=hop_len)
-energy = extractIntensity(file, 'C:/Users/user/Desktop/mir_final/energy.txt', praatEXE,
+energy = extractIntensity(file, 'D:/Acapella-Creator/data/result/energy.txt', praatEXE,
                           minPitch=65, sampleStep=librosa.samples_to_time(hop_len, fs), 
                           forceRegenerate=True, undefinedValue=0)
-pitch = extractPitch(file, 'C:/Users/user/Desktop/mir_final/pitch.txt', praatEXE,
+pitch = extractPitch(file, 'D:/Acapella-Creator/data/result/pitch.txt', praatEXE,
              sampleStep=librosa.samples_to_time(hop_len, fs), minPitch=65, maxPitch=1047,
                              silenceThreshold=0.01, forceRegenerate=True,
                              undefinedValue=0, medianFilterWindowSize=0,
@@ -162,12 +204,12 @@ frames = np.arange(len(spectral_novelty))
 t = librosa.frames_to_time(frames, sr=fs)
 
 idx = np.where(np.bitwise_and(nor_pitch>0.2, nor_ener>0.8))[0]
-idx = np.where(spectral_novelty[idx]>0.85)[0]
+idx = np.where(spectral_novelty[idx]>0.8)[0]
 result = group_consecutives(idx)
 drum_cand = find_n_largelen_cand(result, 5)
 rr = drum_cand[np.random.randint(5)]
-start = librosa.frames_to_samples(rr[0]+5, hop_len, n_fft=win_len)
-end = librosa.frames_to_samples(rr[-1]+6, hop_len, n_fft=win_len)
+start = librosa.frames_to_samples(rr[0]+11, hop_len, n_fft=win_len)
+end = librosa.frames_to_samples(rr[-1]+12, hop_len, n_fft=win_len)
 tmpp = np.concatenate((data[start:end],data[start:end],data[start:end],data[start:end]), axis=0)
 drum = data[start:end]
 
@@ -176,11 +218,94 @@ f0 = pw.stonemask(drum, _f0, t, fs)  # pitch refinement
 #f0 = f0[np.where(f0>0)]
 sp = pw.cheaptrick(drum, f0, t, fs)  # extract smoothed spectrogram
 ap = pw.d4c(drum, f0, t, fs)         # extract aperiodicity
-diff = np.mean(f0) - 120
+diff = np.mean(f0) - 95
 y = pw.synthesize(f0-diff, sp, ap, fs)
 drum = y
 adsr = list(lazy_synth.adsr(len(drum), len(drum)*0.1, len(drum)*0.1, len(drum)*0.1, len(drum)*0.7))
 
 drummm = gen_drum(all_data, fs, beat_samples, drum*librosa.util.normalize(adsr))
+bass = gen_bass(all_data, fs, beat_samples)
+#chorus, fs = librosa.load('../result/lemon_chorus_mix.wav', sr=None)
+#%%
+n_fft = 100	# (ms)
+hop_length = 25	# (ms)
+
+y, sr = librosa.load('../data/lemon.wav', sr=None)
+#y, sr = librosa.load('../data/sudden_miss_you_cut.wav', sr=None)
+cxx = librosa.feature.chroma_cqt(y=y, sr=sr)
+
+#%% find tonality
+chroma_vector = np.sum(cxx, axis=1)
+key_ind = np.array(utils.KEY)[np.argmax(chroma_vector)]
+
+major = utils.rotate(utils.MODE['major'], np.argmax(chroma_vector))
+minor = utils.rotate(utils.MODE['minor'], np.argmax(chroma_vector))
+major_cor = pearsonr(major, chroma_vector)[0]
+minor_cor = pearsonr(minor, chroma_vector)[0]
+if major_cor > minor_cor:
+    mode = 'major'
+else:
+    mode = 'minor'
+#print(key_ind, mode)
+KEY = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
+idx_ton = KEY.index(key_ind)  # shift number
+
+#%% vocoder analysis
+x, fs = librosa.load('../data/lemon.wav', dtype='double', sr=None)
+#x, fs = librosa.load('../data/sudden_miss_you_cut.wav', dtype='double', sr=None)
+
+_f0, t = pw.dio(x, fs)    # raw pitch extractor
+f0 = pw.stonemask(x, _f0, t, fs)  # pitch refinement
+sp = pw.cheaptrick(x, f0, t, fs)  # extract smoothed spectrogram
+ap = pw.d4c(x, f0, t, fs)         # extract aperiodicity
+#y = pw.synthesize(f0*2**(3/12), sp, ap, fs)
+#mix = y[0:len(x)-len(y)] + x
+#sd.play(mix, fs)
+
+#%% shift to 'C' tonality and generate chorus
+tune=1  # 調整到對的大調
+f0_C = f0*2**(-(idx_ton-tune)/12)
+
+
+chorus_up = np.zeros(f0.size)
+chorus_down = np.zeros(f0.size)
+phonetic = [16.352, 18.354, 20.602, 21.827, 24.5, 27.5, 30.868]  # basic frequencies of phonetic
+for k, freq_f0 in enumerate(f0_C):
+    if freq_f0==0:
+        continue
+    temp = freq_f0/phonetic
+    log2temp = [math.log2(i) for i in temp]
+    diff = list(map(sub, log2temp, [round(i) for i in log2temp]))
+    diff = [abs(i) for i in diff]
+    idx = diff.index(min(diff))
+    if idx==0 or idx==3 or idx==4:
+        chorus_up[k] = freq_f0*2**(4/12)
+    else:
+        chorus_up[k] = freq_f0*2**(3/12)  #升三度
+# =============================================================================
+    if idx==2 or idx==5 or idx==6:
+        chorus_down[k] = freq_f0*2**(-4/12)
+    else:
+        chorus_down[k] = freq_f0*2**(-3/12)   #降三度
+# =============================================================================
+
+chorus_up = chorus_up*2**((idx_ton-tune)/12)
+chorus_down = chorus_down*2**(idx_ton/12)
+chorus_down_octave = f0/2
+
+y_up = pw.synthesize(chorus_up, sp, ap, fs)
+y_down = pw.synthesize(chorus_down, sp, ap, fs)
+y_down_octave = pw.synthesize(chorus_down_octave, sp, ap, fs)
+#mix = x + y_down_octave[0:len(x)-len(y_down_octave)]*0.2 + y_up[0:len(x)-len(y_up)]*0.5 #+ y_down[0:len(x)-len(y_down)]*0.5
+#sd.play(mix, fs)
+
+#################random####################
+random1 = random.randrange(0,round(len(x)*0.4))
+random2 = random.randrange(round(len(x)*0.4),len(x)-250000)
+mix1x = np.zeros((len(x)))
+mix1x[random1:random1+250000] = y_up[random1:random1+250000]
+mix2x = np.zeros((len(x)))
+mix2x[random2:random2+250000] = y_up[random2:random2+250000]
+chorus = x + y_down_octave[0:len(x)-len(y_down_octave)]*0.2 + mix1x*0.5 + mix2x*0.5
 #sd.play(drummm, fs)
-sd.play(drummm*0.4+hihat*0.3+all_data, fs)
+sd.play(drummm*0.8+hihat*0.3+bass*0.8+all_data+chorus, fs)
