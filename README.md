@@ -8,9 +8,12 @@ Create an A Capella with solo automatically.
 
 ```
 ├── README.md
+├── Praat.exe
 ├── data
+│   └── result
 ├── code
-├── result
+│   └── mir_final.py
+└── result
 ```
 ### /code
 Source code of the project.
